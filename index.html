@@ -742,7 +742,7 @@ button.btn[disabled]{opacity:.4;cursor:not-allowed;transform:none!important}
 <div id="printArea"></div>
 
 <script>
-const APP_VERSION = "1.19.1";
+const APP_VERSION = "1.20.0";
 const VERSION_URL = "version.json";
 const XLSX_TYPE = {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":[".xlsx"]};
 const CHUNK = 30000;
@@ -1464,9 +1464,13 @@ async function viewRecord(id){
 
 /* ---------- update check ---------- */
 let remoteVer=null,shownUpdFor=null;
+/* GitHub copy of the app. A page opened from the desktop (file://) cannot read sibling files, so it reads this instead. */
+const REMOTE_BASE="https://raw.githubusercontent.com/salarr/Complaintcell/main/";
+const isLocalFile=()=>location.protocol==="file:";
+const remoteURL=n=>isLocalFile()?REMOTE_BASE+n:n;
 async function checkUpdate(manual){
   try{
-    const res=await fetch(VERSION_URL+"?t="+Date.now(),{cache:"no-store"});
+    const res=await fetch(remoteURL("version.json")+"?t="+Date.now(),{cache:"no-store"});
     if(!res.ok)throw new Error("HTTP "+res.status);
     const j=await res.json();
     remoteVer=String(j.version||"");
@@ -1507,8 +1511,26 @@ function announceUpdated(){
     }
   }catch(e){}
 }
-function applyUpdate(){
+async function applyUpdate(){
   try{localStorage.setItem("cpo_pending_update",remoteVer||"")}catch(e){}
+  if(isLocalFile()){
+    // desktop copy: fetch the new index.html and write it over the old file
+    try{
+      const r=await fetch(REMOTE_BASE+"index.html?t="+Date.now(),{cache:"no-store"});
+      if(!r.ok)throw new Error("HTTP "+r.status);
+      const blob=await r.blob();
+      if("showSaveFilePicker" in window){
+        toast("اپنی موجودہ index.html فائل چنیں اور Replace/Save دبائیں");
+        const h=await showSaveFilePicker({suggestedName:"index.html",types:[{description:"HTML",accept:{"text/html":[".html"]}}]});
+        const w=await h.createWritable();await w.write(blob);await w.close();
+        closeModal("updateModal");location.reload();
+      }else{
+        const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="index.html";a.click();
+        toast("نئی index.html ڈاؤن لوڈ ہوگئی — اسے پرانی فائل کی جگہ رکھ دیں");
+      }
+    }catch(e){if(e&&e.name!=="AbortError")toast("اپڈیٹ ڈاؤن لوڈ نہیں ہوسکی: "+(e.message||e),true)}
+    return;
+  }
   const u=new URL(location.href);u.searchParams.set("v",remoteVer||Date.now());
   location.replace(u.toString());
 }
@@ -1523,7 +1545,7 @@ async function sha256hex(t){
 const userHash=(u,p)=>sha256hex(AUTH_SALT+"|"+u.trim().toLowerCase()+"|"+p);
 async function loadUsers(){
   try{
-    const r=await fetch("users.json?t="+Date.now(),{cache:"no-store"});
+    const r=await fetch(remoteURL("users.json")+"?t="+Date.now(),{cache:"no-store"});
     if(r.ok){const j=await r.json();if(j&&Array.isArray(j.users)&&j.users.length)return j.users}
   }catch(e){}
   return DEFAULT_USERS;
